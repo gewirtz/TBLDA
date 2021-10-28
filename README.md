@@ -32,9 +32,9 @@ TBLDA is implemented in Python 3.8. It requires the following packages (used ver
 2. File delimiter (`--file_delim`): Character that separates columns across all files. Defaults to tab.
 3. Learning rate (`--lr`): Learning rate for inference. Defaults to 0.05.
 4. Maximum number of epochs (`--max_epochs`)
-5. Write iterations (`--write_its`): Specifies how often intermediate results are saved (write output every <X> iterations).
+5. Write iterations (`--write_its`): Specifies how often intermediate results are saved (write output every [X] iterations).
 
-  **Output**: 
+  **Output**: X refers to the number of epochs run
   
-  1. results_<X>_epochs.save: This contains the pyro parameter store with the estimates of xi, sigma, zeta, and gamma.
-  2. results_<X>_epochs_loss.data: This contains the loss estimates at every epoch.
+  1. results_X_epochs.save: This contains the pyro parameter store with the estimates of xi, sigma, zeta, and gamma.
+  2. results_X_epochs_loss.data: This contains the loss estimates at every epoch
