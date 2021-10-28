@@ -31,38 +31,6 @@ pyro.enable_validation(True)
 pyro.set_rng_seed(1)
 
 
-def check_convergence(losses, epoch, epsilon):
-
-    """
-    Evaluates convergence criteria for the model run
-
-    Args:
-        losses: ELBO values from each epoch
-
-        epoch: current epoch value
-
-        epsilon: the upper bound for the proportional ELBO change over the previous 1000 iterations
-
-    Returns:
-        Boolean value whether convergence criteria has been reached    
-    """
-
-    elbo_prev_1000 =  np.mean(losses[(epoch - 1000):epoch])
-    elbo_prev_2000 =  np.mean(losses[(epoch - 2000):epoch])
-    elbo_penultimate_1000 = np.mean(losses[(epoch - 2000):(epoch - 1000)])
-    delta_loss = (elbo_penultimate_1000 - elbo_prev_1000)) / elbo_prev_2000
-    
-    if delta_loss <= epsilon:
-        pyro.get_param_store().save(( str(len(losses)) + '_epochs.save'))
-        with open((str(len(losses)) + '_epochs_loss.data'), 'wb') as filehandle:
-            pickle.dump(losses, filehandle)
-        
-        return(True)
-
-    return(False)
-
-
-
 @pyro.poutine.scale(scale=1.0e-6)
 def TBLDA_model(hps, mps, x, y, anc_portion, cell_ind_matrix):
     """
