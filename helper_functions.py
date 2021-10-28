@@ -59,7 +59,7 @@ def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f, f_delim):
 
         anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
 
-        cell_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
+        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
                          1 coded at the position of the donor individual
 
     """
@@ -69,13 +69,13 @@ def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f, f_delim):
     y = torch.from_numpy(y.to_numpy(dtype='int8'))
     anc_loadings = torch.from_numpy(np.genfromtxt(beta_f, delimiter=f_delim))
     anc_facs = torch.from_numpy(np.genfromtxt(tau_f, delimiter=f_delim)).t()
-    cell_inds = torch.from_numpy(np.loadtxt(samp_map_f, skiprows=1, dtype='int64'))
-    cell_ind_matrix = torch.zeros([x.shape[0], y.shape[1]])
+    sample_inds = torch.from_numpy(np.loadtxt(samp_map_f, skiprows=1, dtype='int64'))
+    sample_ind_matrix = torch.zeros([x.shape[0], y.shape[1]])
     
-    for cell in range(x.shape[0]):
-        cell_ind_matrix[cell, cell_inds[cell].item()] = 1
+    for sample in range(x.shape[0]):
+        sample_ind_matrix[cell, sample_inds[sample].item()] = 1
 
     anc_portion = torch.mm(anc_loadings, anc_facs)
     
-    return(x, y, anc_portion, cell_ind_matrix) 
+    return(x, y, anc_portion, sample_ind_matrix) 
     
