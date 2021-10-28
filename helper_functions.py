@@ -33,7 +33,7 @@ def check_convergence(losses, epoch, epsilon):
     return(False)
 
 
-def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f):
+def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f, f_delim):
 
     """
     Loads data matrices
@@ -49,7 +49,9 @@ def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f):
 
         samp_map_f: File containing [samples x individuals] matrix where each row has a single
                          1 coded at the position of the donor individual
-    
+   
+        f_delim: Delimiter character for reading in all files
+ 
     Returns:
         x: [samples x genes] pytorch tensor of expression counts
 
@@ -62,11 +64,11 @@ def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f):
 
     """
 
-    x = torch.from_numpy(pd.read_csv(expr_f, delimiter='\t').to_numpy(dtype='float32')).t()
-    y = pd.read_csv(geno_f, delimiter='\t')
+    x = torch.from_numpy(pd.read_csv(expr_f, delimiter=f_delim).to_numpy(dtype='float32'))
+    y = pd.read_csv(geno_f, delimiter=f_delim)
     y = torch.from_numpy(y.to_numpy(dtype='int8'))
-    anc_loadings = torch.from_numpy(np.genfromtxt(beta_f, delimiter='\t'))
-    anc_facs = torch.from_numpy(np.genfromtxt(tau_f, delimiter='\t')).t()
+    anc_loadings = torch.from_numpy(np.genfromtxt(beta_f, delimiter=f_delim))
+    anc_facs = torch.from_numpy(np.genfromtxt(tau_f, delimiter=f_delim)).t()
     cell_inds = torch.from_numpy(np.loadtxt(samp_map_f, skiprows=1, dtype='int64'))
     cell_ind_matrix = torch.zeros([x.shape[0], y.shape[1]])
     
