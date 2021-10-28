@@ -43,7 +43,7 @@ if args.lr <= 0 or args.lr >= 1:
     raise argparse.ArgumentTypeError('Learning rate must be between 0 and 1')
 
 # Read in data
-x, y, anc_portion, cell_ind_matrix = import_data(args.expr_f, args.geno_f, args.beta_f, \
+x, y, anc_portion, sample_ind_matrix = import_data(args.expr_f, args.geno_f, args.beta_f, \
                                                  args.tau_f, args.samp_map_f, f_delim)
 
 
