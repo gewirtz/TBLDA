@@ -133,3 +133,38 @@ def TBLDA_guide(hps, mps, x, y, anc_portion, cell_ind_matrix):
         lambda_s = pyro.sample("lambda_s", dist.Beta(zeta, gamma)) # [n_snps, k_b]
 
 
+def run_vi(hps, mps, lr, max_epochs, seed, write_its, verbose, check_conv_its=25, epsilon=1e-4):
+    """
+
+    """
+    
+    pyro.set_rng_seed(seed)
+    pyro.clear_param_store()
+
+    opt1 = poptim.Adam({"lr": lr})
+    svi = SVI(TBLDA_model, TBLDA_guide, opt1, loss=Trace_ELBO())
+    losses = []
+
+    for epoch in range(max_epochs):
+        if verbose:
+            print('EPOCH ' + str(epoch),flush=True)
+        elbo = svi.step(hps, mps, x, y, anc_portion, cell_ind_matrix)
+        losses.append(elbo)
+        # only start checking for convergence after 5000 epochs
+        if (epoch % check_conv_its == 0) and (epoch > 5000):
+            converge = check_convergence(losses, epoch, epsilon)
+            if converge:
+                break
+        # write intermediate output
+        if((epoch>0) and (epoch%write_its==0)):
+                pyro.get_param_store().save(('results_' + str(epoch) + '_epochs.save'))
+                with open('results_' + str(epoch) + '_epochs_loss.data'), 'wb') as filehandle:
+                    pickle.dump(losses, filehandle)
+                # remove old files
+                if epoch > write_its:
+                    os.remove('results_' + str(epoch - write_its) + '_epochs.save')
+                    os.remove('results_' + str(epoch - write_its) + '_epochs_loss.data')
+
+
+
+
