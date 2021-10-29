@@ -2,6 +2,7 @@
 
 from def_params import *
 from TBLDA import *
+from helper_functions import *
 import argparse
 
 parser = argparse.ArgumentParser(description='Run TBLDA')

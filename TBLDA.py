@@ -32,7 +32,7 @@ pyro.set_rng_seed(1)
 
 
 @pyro.poutine.scale(scale=1.0e-6)
-def TBLDA_model(hps, mps, x, y, anc_portion, cell_ind_matrix):
+def TBLDA_model(hps, mps, x, y, anc_portion, sample_ind_matrix):
     """
     Model for TBLDA
 
@@ -47,7 +47,7 @@ def TBLDA_model(hps, mps, x, y, anc_portion, cell_ind_matrix):
 
         anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
 
-        cell_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
+        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
 			 1 coded at the position of the donor individual
 
     Returns:
@@ -76,7 +76,7 @@ def TBLDA_model(hps, mps, x, y, anc_portion, cell_ind_matrix):
 
     alpha = pyro.sample('alpha', dist.Uniform(hps.delta, hps.mu))
 
-    phi_ind = torch.mm(phi.t(), cell_ind_matrix) #[k_b, n_inds]
+    phi_ind = torch.mm(phi.t(), sample_ind_matrix) #[k_b, n_inds]
     phi_ind = phi_ind / torch.sum(phi_ind, dim=0).view([1, mps.n_inds])
     pi_s = (alpha * anc_portion) + ((1 - alpha) * torch.mm(lambda_s, phi_ind)) # [n_snps, n_inds]
 
@@ -85,7 +85,7 @@ def TBLDA_model(hps, mps, x, y, anc_portion, cell_ind_matrix):
 
 
 @pyro.poutine.scale(scale=1.0e-6)
-def TBLDA_guide(hps, mps, x, y, anc_portion, cell_ind_matrix):
+def TBLDA_guide(hps, mps, x, y, anc_portion, sample_ind_matrix):
     """
     Guide Function for TBLDA
 
@@ -100,7 +100,7 @@ def TBLDA_guide(hps, mps, x, y, anc_portion, cell_ind_matrix):
 
         anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
 
-        cell_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
+        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
                          1 coded at the position of the donor individual
 
     Returns:
@@ -133,9 +133,38 @@ def TBLDA_guide(hps, mps, x, y, anc_portion, cell_ind_matrix):
         lambda_s = pyro.sample("lambda_s", dist.Beta(zeta, gamma)) # [n_snps, k_b]
 
 
-def run_vi(hps, mps, lr, max_epochs, seed, write_its, verbose, check_conv_its=25, epsilon=1e-4):
+def run_vi(hps, mps, x, y, anc_portion, sample_ind_matrix, lr, max_epochs, seed, write_its, \
+           check_conv_its=25, epsilon=1e-4, verbose=True):
     """
+    Run variational inference through Pyro to fit the TBLDA model
 
+    Args:
+        hps: Hyperparams object with model hyperparameters
+
+        mps: Modelparams object containing overall model parameters
+
+          x: [samples x genes] pytorch tensor of expression counts
+
+          y: [snps x individuals] pytorch tensor of minor allele counts [0,1,2]
+
+        anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
+
+        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
+                         1 coded at the position of the donor individual
+
+        lr: Learning rate
+
+        max_epochs: Maximum number of epochs before termination
+
+        seed: Value to seed the random number generator with
+
+        write_its: How often to write intermediate output
+
+        check_conv_its: How often to check for convergence
+
+        epsilon: Parameter for evaluating convergence
+
+        verbose: Whether to print out epoch progression
     """
     
     pyro.set_rng_seed(seed)
@@ -147,14 +176,17 @@ def run_vi(hps, mps, lr, max_epochs, seed, write_its, verbose, check_conv_its=25
 
     for epoch in range(max_epochs):
         if verbose:
-            print('EPOCH ' + str(epoch),flush=True)
-        elbo = svi.step(hps, mps, x, y, anc_portion, cell_ind_matrix)
-        losses.append(elbo)
+            if epoch % 1000 == 0:
+                print('EPOCH ' + str(epoch),flush=True)
+        n_elbo = svi.step(hps, mps, x, y, anc_portion, cell_ind_matrix)
+        losses.append(n_elbo)
+        
         # only start checking for convergence after 5000 epochs
         if (epoch % check_conv_its == 0) and (epoch > 5000):
             converge = check_convergence(losses, epoch, epsilon)
             if converge:
                 break
+
         # write intermediate output
         if((epoch>0) and (epoch%write_its==0)):
                 pyro.get_param_store().save(('results_' + str(epoch) + '_epochs.save'))
