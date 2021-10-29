@@ -2,6 +2,7 @@
 Telescoping Bimodal Latent Dirichlet Allocation
 
 # Overview
+https://www.biorxiv.org/content/10.1101/2021.10.27.466156v1
 
 # Usage
 
