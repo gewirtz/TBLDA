@@ -120,7 +120,7 @@ def TBLDA_guide(hps, mps, x, y, anc_portion, cell_ind_matrix):
 
 
     # local - cell level. 
-    sigma = pyro.param("sigma", torch.ones([mps.n_cells, mps.k_b]), constraint=constraints.positive)
+    sigma = pyro.param("sigma", torch.ones([mps.n_samples, mps.k_b]), constraint=constraints.positive)
     with cell_plt:
         phi = pyro.sample("phi", dist.Dirichlet(sigma)) # [n_samples, k_b]
 
