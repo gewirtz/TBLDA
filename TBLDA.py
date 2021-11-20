@@ -30,173 +30,118 @@ sc.logging.print_versions()
 pyro.enable_validation(True)
 pyro.set_rng_seed(1)
 
+class TBLDA():
 
-@pyro.poutine.scale(scale=1.0e-6)
-def TBLDA_model(hps, mps, x, y, anc_portion, sample_ind_matrix):
+    """
+    Define TBLDA model parameters and hyperparameters
+
+    k_b : Number of latent topics
+    
+    anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
+
+    sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
+                         1 coded at the position of the donor individual
+
+    """
+    def __init__(self, n_inds, n_genes, n_snps, k_b, n_samples, \
+                 anc_portion, sample_ind_matrix, \
+                 sigma=1.0, xi=1.0, psi=1.0, delta=0.05, \
+                 mu=0.85, gamma=1.0):
+        super().__init__()
+        self.n_inds = n_inds
+        self.n_genes = n_genes
+        self.n_snps = n_snps
+        self.k_b = k_b
+        self.n_samples = n_samples
+        self.anc_portion = anc_portion
+        self.alpha_lim = alpha_lim
+        self.sample_ind_matrix = sample_ind_matrix
+        self.psi = psi
+        self.mu = mu
+        self.delta = delta
+        self.zeta = torch.tensor([zeta])
+        self.sigma = torch.ones([k_b]) * sigma
+        self.xi = torch.ones([n_genes]) * xi
+        self.gamma = torch.tensor([gamma])
+
+    
     """
     Model for TBLDA
 
     Args:
-        hps: Hyperparams object with model hyperparameters
-
-        mps: Modelparams object containing overall model parameters
 
           x: [samples x genes] pytorch tensor of expression counts
 
           y: [snps x individuals] pytorch tensor of minor allele counts [0,1,2]
 
-        anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
-
-        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
-			 1 coded at the position of the donor individual
-
-    Returns:
-        NA    
     """
+    @pyro.poutine.scale(scale=1.0e-6)
+    def model(self, x, y):
+        # declare plates
+        snp_plt = pyro.plate('snps', self.n_snps, dim=-2)
+        ind_plt = pyro.plate('inds', self.n_inds)
+        k_b_plt = pyro.plate('k_b', self.k_b)
+        sample_plt = pyro.plate('samples', self.n_samples)
+        gene_plt = pyro.plate('genes', self.n_genes)
 
-    # declare plates
-    snp_plt = pyro.plate('snps', mps.n_snps, dim=-2)
-    ind_plt = pyro.plate('inds', mps.n_inds)
-    k_b_plt = pyro.plate('k_b', mps.k_b)
-    cell_plt = pyro.plate('cells', mps.n_samples)
-    gene_plt = pyro.plate('genes', mps.n_genes)
+        # global
+        with k_b_plt:
+            lambda_g = pyro.sample("lambda_g", dist.Dirichlet(self.xi)) # [k_b, n_genes]
 
-    # global
-    with k_b_plt:
-        lambda_g = pyro.sample("lambda_g", dist.Dirichlet(hps.xi)) # [k_b, n_genes]
+        with snp_plt, k_b_plt:
+            lambda_s = pyro.sample("lambda_s", dist.Beta(self.zeta, self.gamma)) # [n_snps, k_b]
 
-    with snp_plt, k_b_plt:
-        lambda_s = pyro.sample("lambda_s", dist.Beta(hps.zeta, hps.gamma)) # [n_snps, k_b]
+        # local - cell level. 
+        with sample_plt:
+            phi = pyro.sample("phi", dist.Dirichlet(self.sigma))
+            pi_g = torch.mm(phi, lambda_g) # [n_samples, n_genes]
+            pyro.sample('x', dist.Multinomial(probs=pi_g, validate_args=False), obs=x)
 
-    # local - cell level. 
-    with cell_plt:
-        phi = pyro.sample("phi", dist.Dirichlet(hps.sigma))
-        pi_g = torch.mm(phi, lambda_g) # [n_samples, n_genes]
-        pyro.sample('x', dist.Multinomial(probs=pi_g, validate_args=False), obs=x)
+        alpha = pyro.sample('alpha', dist.Uniform(self.delta, self.mu))
 
-    alpha = pyro.sample('alpha', dist.Uniform(hps.delta, hps.mu))
+        phi_ind = torch.mm(phi.t(), sample_ind_matrix) #[k_b, n_inds]
+        phi_ind = phi_ind / torch.sum(phi_ind, dim=0).view([1, self.n_inds])
+        pi_s = (alpha * anc_portion) + ((1 - alpha) * torch.mm(lambda_s, phi_ind)) # [n_snps, n_inds]
 
-    phi_ind = torch.mm(phi.t(), sample_ind_matrix) #[k_b, n_inds]
-    phi_ind = phi_ind / torch.sum(phi_ind, dim=0).view([1, mps.n_inds])
-    pi_s = (alpha * anc_portion) + ((1 - alpha) * torch.mm(lambda_s, phi_ind)) # [n_snps, n_inds]
-
-    with snp_plt:
-        pyro.sample('y', dist.Binomial(2, pi_s), obs=y.float()) # [n_snps, n_inds]
+        with snp_plt:
+            pyro.sample('y', dist.Binomial(2, pi_s), obs=y.float()) # [n_snps, n_inds]
 
 
-@pyro.poutine.scale(scale=1.0e-6)
-def TBLDA_guide(hps, mps, x, y, anc_portion, sample_ind_matrix):
     """
     Guide Function for TBLDA
 
     Args:
-        hps: Hyperparams object with model hyperparameters
-
-        mps: Modelparams object containing overall model parameters
 
           x: [samples x genes] pytorch tensor of expression counts
 
           y: [snps x individuals] pytorch tensor of minor allele counts [0,1,2]
 
-        anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
 
-        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
-                         1 coded at the position of the donor individual
-
-    Returns:
-        NA    
     """
+    @pyro.poutine.scale(scale=1.0e-6)
+    def guide(self, x, y):
+        # declare plates
+        snp_plt = pyro.plate('snps', mps.n_snps, dim=-2)
+        ind_plt = pyro.plate('inds', mps.n_inds)
+        k_b_plt = pyro.plate('k_b', mps.k_b)
+        sample_plt = pyro.plate('samples', mps.n_samples)
+        gene_plt = pyro.plate('genes', mps.n_genes)
 
-    # declare plates
-    snp_plt = pyro.plate('snps', mps.n_snps, dim=-2)
-    ind_plt = pyro.plate('inds', mps.n_inds)
-    k_b_plt = pyro.plate('k_b', mps.k_b)
-    cell_plt = pyro.plate('cells', mps.n_samples)
-    gene_plt = pyro.plate('genes', mps.n_genes)
-
-    xi = pyro.param("xi", torch.ones([mps.k_b, mps.n_genes]), constraint=constraints.positive)
-    with k_b_plt:
-        lambda_g = pyro.sample("lambda_g", dist.Dirichlet(xi)) # [k_b, n_genes]
-
-
-    # local - cell level. 
-    sigma = pyro.param("sigma", torch.ones([mps.n_samples, mps.k_b]), constraint=constraints.positive)
-    with cell_plt:
-        phi = pyro.sample("phi", dist.Dirichlet(sigma)) # [n_samples, k_b]
-
-    alpha_p = pyro.param("alpha_p", torch.tensor([0.1]), constraint=constraints.interval(hps.delta, hps.mu))
-    alpha = pyro.sample("alpha", dist.Delta(alpha_p))
-
-    zeta = pyro.param("zeta", torch.ones([mps.n_snps, mps.k_b]), constraint=constraints.positive)
-    gamma = pyro.param("gamma", torch.ones([mps.n_snps, mps.k_b]), constraint=constraints.positive)
-    with snp_plt, k_b_plt:
-        lambda_s = pyro.sample("lambda_s", dist.Beta(zeta, gamma)) # [n_snps, k_b]
+        xi = pyro.param("xi", torch.ones([mps.k_b, mps.n_genes]), constraint=constraints.positive)
+        with k_b_plt:
+            lambda_g = pyro.sample("lambda_g", dist.Dirichlet(xi)) # [k_b, n_genes]
 
 
-def run_vi(hps, mps, x, y, anc_portion, sample_ind_matrix, lr, max_epochs, seed, write_its, \
-           check_conv_its=25, epsilon=1e-4, verbose=True):
-    """
-    Run variational inference through Pyro to fit the TBLDA model
+        # local - sample level. 
+        sigma = pyro.param("sigma", torch.ones([mps.n_samples, mps.k_b]), constraint=constraints.positive)
+        with sample_plt:
+            phi = pyro.sample("phi", dist.Dirichlet(sigma)) # [n_samples, k_b]
 
-    Args:
-        hps: Hyperparams object with model hyperparameters
+        alpha_p = pyro.param("alpha_p", torch.tensor([0.1]), constraint=constraints.interval(hps.delta, hps.mu))
+        alpha = pyro.sample("alpha", dist.Delta(alpha_p))
 
-        mps: Modelparams object containing overall model parameters
-
-          x: [samples x genes] pytorch tensor of expression counts
-
-          y: [snps x individuals] pytorch tensor of minor allele counts [0,1,2]
-
-        anc_portion: Estimated ancestral structure (genotype-specific space; product of zeta and gamma)
-
-        sample_ind_matrix: [samples x individuals] pytorch indicator tensor where each row has a single
-                         1 coded at the position of the donor individual
-
-        lr: Learning rate
-
-        max_epochs: Maximum number of epochs before termination
-
-        seed: Value to seed the random number generator with
-
-        write_its: How often to write intermediate output
-
-        check_conv_its: How often to check for convergence
-
-        epsilon: Parameter for evaluating convergence
-
-        verbose: Whether to print out epoch progression
-    """
-    
-    pyro.set_rng_seed(seed)
-    pyro.clear_param_store()
-
-    opt1 = poptim.Adam({"lr": lr})
-    svi = SVI(TBLDA_model, TBLDA_guide, opt1, loss=Trace_ELBO())
-    losses = []
-
-    for epoch in range(max_epochs):
-        if verbose:
-            if epoch % 1000 == 0:
-                print('EPOCH ' + str(epoch),flush=True)
-        n_elbo = svi.step(hps, mps, x, y, anc_portion, cell_ind_matrix)
-        losses.append(n_elbo)
-        
-        # only start checking for convergence after 5000 epochs
-        if (epoch % check_conv_its == 0) and (epoch > 5000):
-            converge = check_convergence(losses, epoch, epsilon)
-            if converge:
-                break
-
-        # write intermediate output
-        if((epoch>0) and (epoch%write_its==0)):
-                pyro.get_param_store().save(('results_' + str(epoch) + '_epochs.save'))
-                with open('results_' + str(epoch) + '_epochs_loss.data'), 'wb') as filehandle:
-                    pickle.dump(losses, filehandle)
-                # remove old files
-                if epoch > write_its:
-                    os.remove('results_' + str(epoch - write_its) + '_epochs.save')
-                    os.remove('results_' + str(epoch - write_its) + '_epochs_loss.data')
-
-
-
+        zeta = pyro.param("zeta", torch.ones([mps.n_snps, mps.k_b]), constraint=constraints.positive)
+        gamma = pyro.param("gamma", torch.ones([mps.n_snps, mps.k_b]), constraint=constraints.positive)
+        with snp_plt, k_b_plt:
+            lambda_s = pyro.sample("lambda_s", dist.Beta(zeta, gamma)) # [n_snps, k_b]
 

@@ -33,6 +33,8 @@ def check_convergence(losses, epoch, epsilon):
     return(False)
 
 
+
+
 def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f, f_delim):
 
     """
@@ -78,4 +80,64 @@ def import_data(expr_f, geno_f, beta_f, tau_f, samp_map_f, f_delim):
     anc_portion = torch.mm(anc_loadings, anc_facs)
     
     return(x, y, anc_portion, sample_ind_matrix) 
-    
+
+
+
+
+def run_vi(tblda, x, y, lr, max_epochs, seed, write_its, \
+           check_conv_its=25, epsilon=1e-4, verbose=True):
+    """
+    Run variational inference through Pyro to fit the TBLDA model
+
+    Args:
+        tblda: TBLDA object
+
+          x: [samples x genes] pytorch tensor of expression counts
+
+          y: [snps x individuals] pytorch tensor of minor allele counts [0,1,2]
+
+        lr: Learning rate
+
+        max_epochs: Maximum number of epochs before termination
+
+        seed: Value to seed the random number generator with
+
+        write_its: How often to write intermediate output
+
+        check_conv_its: How often to check for convergence
+
+        epsilon: Parameter for evaluating convergence
+
+        verbose: Whether to print out epoch progression
+    """
+
+    pyro.set_rng_seed(seed)
+    pyro.clear_param_store()
+
+    opt1 = poptim.Adam({"lr": lr})
+
+    svi = SVI(tblda.model, tblda.guide, opt1, loss=Trace_ELBO())
+    losses = []
+
+    for epoch in range(max_epochs):
+        if verbose:
+            if epoch % 1000 == 0:
+                print('EPOCH ' + str(epoch),flush=True)
+        n_elbo = svi.step(x, y)
+        losses.append(n_elbo)
+
+        # only start checking for convergence after 5000 epochs
+        if (epoch % check_conv_its == 0) and (epoch > 5000):
+            converge = check_convergence(losses, epoch, epsilon)
+            if converge:
+                break
+
+        # write intermediate output
+        if((epoch>0) and (epoch%write_its==0)):
+                pyro.get_param_store().save(('results_' + str(epoch) + '_epochs.save'))
+                with open('results_' + str(epoch) + '_epochs_loss.data'), 'wb') as filehandle:
+                    pickle.dump(losses, filehandle)
+                # remove old files
+                if epoch > write_its:
+                    os.remove('results_' + str(epoch - write_its) + '_epochs.save')
+                    os.remove('results_' + str(epoch - write_its) + '_epochs_loss.data')    

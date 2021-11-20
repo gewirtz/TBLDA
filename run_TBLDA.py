@@ -47,12 +47,12 @@ if args.lr <= 0 or args.lr >= 1:
 x, y, anc_portion, sample_ind_matrix = import_data(args.expr_f, args.geno_f, args.beta_f, \
                                                  args.tau_f, args.samp_map_f, f_delim)
 
+# create TBLDA object
+tblda = TBLDA(n_inds=y.shape[1], n_genes=x.shape[1], n_snps=y.shape[0], \
+              k_b=args.K, n_samples=x.shape[0], anc_portion=anc_portion, \
+              sample_ind_matrix=sample_ind_matrix)
 
-m_params = Modelparams(n_inds = y.shape[1], n_snps = y.shape[0], n_samples = x.shape[0], \
-                       n_genes = x.shape[1])
-h_params = Hyperparams(m_params)
-
-run_vi(hps=h_params, mps=m_params, lr=args.lr, seed=args.seed, max_epochs=args.max_epochs, \
+run_vi(tblda, x, y, lr=args.lr, seed=args.seed, max_epochs=args.max_epochs, \
        write_its=args.write_its)
 
 
