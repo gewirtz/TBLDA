@@ -99,9 +99,9 @@ class TBLDA():
 
         alpha = pyro.sample('alpha', dist.Uniform(self.delta, self.mu))
 
-        phi_ind = torch.mm(phi.t(), sample_ind_matrix) #[k_b, n_inds]
+        phi_ind = torch.mm(phi.t(), self.sample_ind_matrix) #[k_b, n_inds]
         phi_ind = phi_ind / torch.sum(phi_ind, dim=0).view([1, self.n_inds])
-        pi_s = (alpha * anc_portion) + ((1 - alpha) * torch.mm(lambda_s, phi_ind)) # [n_snps, n_inds]
+        pi_s = (alpha * self.anc_portion) + ((1 - alpha) * torch.mm(lambda_s, phi_ind)) # [n_snps, n_inds]
 
         with snp_plt:
             pyro.sample('y', dist.Binomial(2, pi_s), obs=y.float()) # [n_snps, n_inds]
@@ -121,27 +121,27 @@ class TBLDA():
     @pyro.poutine.scale(scale=1.0e-6)
     def guide(self, x, y):
         # declare plates
-        snp_plt = pyro.plate('snps', mps.n_snps, dim=-2)
-        ind_plt = pyro.plate('inds', mps.n_inds)
-        k_b_plt = pyro.plate('k_b', mps.k_b)
-        sample_plt = pyro.plate('samples', mps.n_samples)
-        gene_plt = pyro.plate('genes', mps.n_genes)
+        snp_plt = pyro.plate('snps', self.n_snps, dim=-2)
+        ind_plt = pyro.plate('inds', self.n_inds)
+        k_b_plt = pyro.plate('k_b', self.k_b)
+        sample_plt = pyro.plate('samples', self.n_samples)
+        gene_plt = pyro.plate('genes', self.n_genes)
 
-        xi = pyro.param("xi", torch.ones([mps.k_b, mps.n_genes]), constraint=constraints.positive)
+        xi = pyro.param("xi", torch.ones([self.k_b, self.n_genes]), constraint=constraints.positive)
         with k_b_plt:
             lambda_g = pyro.sample("lambda_g", dist.Dirichlet(xi)) # [k_b, n_genes]
 
 
         # local - sample level. 
-        sigma = pyro.param("sigma", torch.ones([mps.n_samples, mps.k_b]), constraint=constraints.positive)
+        sigma = pyro.param("sigma", torch.ones([self.n_samples, self.k_b]), constraint=constraints.positive)
         with sample_plt:
             phi = pyro.sample("phi", dist.Dirichlet(sigma)) # [n_samples, k_b]
 
-        alpha_p = pyro.param("alpha_p", torch.tensor([0.1]), constraint=constraints.interval(hps.delta, hps.mu))
+        alpha_p = pyro.param("alpha_p", torch.tensor([0.1]), constraint=constraints.interval(self.delta, self.mu))
         alpha = pyro.sample("alpha", dist.Delta(alpha_p))
 
-        zeta = pyro.param("zeta", torch.ones([mps.n_snps, mps.k_b]), constraint=constraints.positive)
-        gamma = pyro.param("gamma", torch.ones([mps.n_snps, mps.k_b]), constraint=constraints.positive)
+        zeta = pyro.param("zeta", torch.ones([self.n_snps, self.k_b]), constraint=constraints.positive)
+        gamma = pyro.param("gamma", torch.ones([self.n_snps, self.k_b]), constraint=constraints.positive)
         with snp_plt, k_b_plt:
             lambda_s = pyro.sample("lambda_s", dist.Beta(zeta, gamma)) # [n_snps, k_b]
 
